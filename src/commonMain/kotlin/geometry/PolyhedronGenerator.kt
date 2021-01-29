@@ -30,7 +30,7 @@ class Polyhedron(
             (vertex.z * VERT_CACHE_PRECISION).roundToInt()
         )
         return added_vert_cache.getOrElse(vertexKey) {
-            positions.add(vertex);
+            positions.add(vertex)
             normals.add(Vector3(0f, 0f, 0f))
             val addedIndex = positions.size - 1
             added_vert_cache[vertexKey] = addedIndex
@@ -45,8 +45,7 @@ class Polyhedron(
     }
 
     fun subdivide(other: Polyhedron, radius: Float, detail: Int) {
-        other.cells.forEachIndexed { position, triangle ->
-            println("position $position")
+        other.cells.forEach { triangle ->
             val a = other.positions[triangle.a]
             val b = other.positions[triangle.b]
             val c = other.positions[triangle.c]
@@ -77,7 +76,7 @@ class Polyhedron(
 
         (0 until cols).forEach { i ->
             (0 until 2 * (cols - i) - 1).forEach { j ->
-                val k = j / 2;
+                val k = j / 2
 
                 val triangle = if (j % 2 == 0) {
                     Triangle(
@@ -100,27 +99,32 @@ class Polyhedron(
 
     fun computeTriangleNormals() {
         val origin = Vector3(0f, 0f, 0f)
-        (0 until cells.size).forEach { i ->
+        val cellWindingToFix = mutableMapOf<Int, Triangle>()
+        cells.forEachIndexed { index, cell ->
 
-            val vertexA = positions[cells[i].a]
-            val vertexB = positions[cells[i].b]
-            val vertexC = positions[cells[i].c]
+            val vertexA = positions[cell.a]
+            val vertexB = positions[cell.b]
+            val vertexC = positions[cell.c]
 
             val e1 = vertexA - vertexB
             val e2 = vertexC - vertexB
             var no = e1.cross(e2)
 
-            // detect and correct inverted normal
+            // detect and correct inverted normal or winding order
             val dist = vertexB - origin
             if (no.dot(dist) < 0.0) {
                 no *= -1f
+            } else {
+                cellWindingToFix[index] = Triangle(cell.c, cell.b, cell.a)
             }
 
-            normals[cells[i].a] += no
-            normals[cells[i].b] += no
-            normals[cells[i].c] += no
+            normals[cell.a] += no
+            normals[cell.b] += no
+            normals[cell.c] += no
 
         }
+
+        cellWindingToFix.forEach { (index, triangle) -> cells[index] = triangle }
 
         normals.forEachIndexed { index, normal ->
             normals[index] = normal.normalize()
@@ -131,7 +135,7 @@ class Polyhedron(
 
         val vertToFaces = other.vertToFaces()
         val originalVertCount = other.positions.size
-        val triangleCentroids = other.triangle_centroids()
+        val triangleCentroids = other.triangleCentroids()
         val midCentroidCache = mutableMapOf<Triple<Int, Int, Int>, Vector3>()
         var hexCount = 0
         var pentCount = 0
@@ -206,43 +210,43 @@ class Polyhedron(
         spoke_vertex_index: Int,
         vertex_index: Int,
         faces: List<Int>,
-        current_face_index: Int,
+        currentFaceIndex: Int,
         centroid: Vector3,
-        triangle_centroids: Map<Int, Vector3>,
-        mid_centroid_cache: MutableMap<Triple<Int, Int, Int>, Vector3>
+        triangleCentroids: Map<Int, Vector3>,
+        midCentroidCache: MutableMap<Triple<Int, Int, Int>, Vector3>
     ): Vector3 {
-        val adjFaceIndex = findAdjacentFace(spoke_vertex_index, vertex_index, faces, current_face_index)
+        val adjFaceIndex = findAdjacentFace(spoke_vertex_index, vertex_index, faces, currentFaceIndex)
             ?: throw error("fail to find adjacent face")
-        val adjCentroid = triangle_centroids[adjFaceIndex]
+        val adjCentroid = triangleCentroids[adjFaceIndex]
             ?: throw error("fail to find adjacent centroid")
 
         val key = Triple(spoke_vertex_index, vertex_index, adjFaceIndex)
-        return when (val mid_centroid = mid_centroid_cache[key]) {
+        return when (val midCentroid1 = midCentroidCache[key]) {
             null -> {
                 val midCentroid = centroid.lerp(adjCentroid, 0.5f)
-                mid_centroid_cache[key] = midCentroid
+                midCentroidCache[key] = midCentroid
                 midCentroid
             }
-            else -> mid_centroid
+            else -> midCentroid1
         }
     }
 
     private fun findAdjacentFace(
-        spoke_vertex_index: Int,
-        vertex_index: Int,
+        spokeVertexIndex: Int,
+        vertexIndex: Int,
         faces: List<Int>,
-        current_face_index: Int
+        currentFaceIndex: Int
     ): Int? {
         return faces.asSequence()
-            .filter { face_index -> face_index != current_face_index }
+            .filter { face_index -> face_index != currentFaceIndex }
             .find { face_index ->
                 val triangle = cells[face_index]
-                ((triangle.a == spoke_vertex_index
-                        || triangle.b == spoke_vertex_index
-                        || triangle.c == spoke_vertex_index)
-                        && (triangle.a == vertex_index
-                        || triangle.b == vertex_index
-                        || triangle.c == vertex_index))
+                ((triangle.a == spokeVertexIndex
+                        || triangle.b == spokeVertexIndex
+                        || triangle.c == spokeVertexIndex)
+                        && (triangle.a == vertexIndex
+                        || triangle.b == vertexIndex
+                        || triangle.c == vertexIndex))
             }
     }
 
@@ -258,7 +262,7 @@ class Polyhedron(
     }
 
 
-    private fun triangle_centroids(): Map<Int, Vector3> {
+    private fun triangleCentroids(): Map<Int, Vector3> {
         return mutableMapOf<Int, Vector3>().apply {
             cells.forEachIndexed { i, cell ->
                 val a = positions[cell.a]
@@ -278,22 +282,21 @@ class Polyhedron(
     private fun vertToFaces(): Map<Int, MutableList<Int>> {
         return mutableMapOf<Int, MutableList<Int>>()
             .apply {
-                (0 until cells.size).forEach { i ->
-                    val triangle = cells[i]
+                cells.forEachIndexed { index, triangle ->
 
                     when (val faces = this[triangle.a]) {
-                        null -> this[triangle.a] = mutableListOf(i)
-                        else -> faces.add(i)
+                        null -> this[triangle.a] = mutableListOf(index)
+                        else -> faces.add(index)
                     }
 
                     when (val faces = this[triangle.b]) {
-                        null -> this[triangle.b] = mutableListOf(i)
-                        else -> faces.add(i)
+                        null -> this[triangle.b] = mutableListOf(index)
+                        else -> faces.add(index)
                     }
 
                     when (val faces = this[triangle.c]) {
-                        null -> this[triangle.c] = mutableListOf(i)
-                        else -> faces.add(i)
+                        null -> this[triangle.c] = mutableListOf(index)
+                        else -> faces.add(index)
                     }
                 }
             }
